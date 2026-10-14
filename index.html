@@ -304,16 +304,13 @@ function renderIntro(name, jobTitle){
     <p class="sub">You're about to start the online assessment for <b>${esc(jobTitle)}</b>.</p>
     <div class="hint">
       &bull; <b>Total time for this assessment: ${TOTAL_DURATION_MIN_ || '—'} minutes</b>, already counting down since you logged in. The remaining time stays visible at the top of the screen throughout.<br>
-      &bull; <b>Camera and microphone are mandatory</b> for this assessment and are recorded for review - you won't be able to start without granting both.<br>
+      &bull; <b>Camera, microphone and screen sharing are all mandatory</b> for this assessment and are recorded for review - you won't be able to start without granting all three.<br>
       &bull; Each question has its own time limit - it auto-advances when time runs out.<br>
       &bull; You can <b>skip</b> a question and come back to it later, and <b>flag</b> any question for your own review.<br>
       &bull; Before final submission you'll see a review screen with every question and your answer.<br>
       &bull; Copying question text and pasting into answers is disabled.<br>
       &bull; Complete it in one sitting - you won't be able to resume once you close this page, unless HR resets your session.
     </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px;font-weight:600;color:#e5e7eb;cursor:pointer">
-      <input type="checkbox" id="shareScreenOpt" style="width:auto"> Also share my screen for verification (optional)
-    </label>
     <button class="btn" id="startBtn">Continue to Assessment</button>
     <div id="camErr"></div>
   `;
@@ -337,15 +334,21 @@ async function requestCameraAndStart_(){
     btn.disabled = false; btn.textContent = 'Continue to Assessment';
     return;
   }
+  try{
+    SCREEN_STREAM = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  }catch(screenErr){
+    logActivity_('screen_share_declined', String(screenErr && screenErr.name || screenErr));
+    errBox.innerHTML = `<div class="err">Screen sharing is <b>mandatory</b> for this assessment. Please click Continue again and choose "Share" when your browser asks - the assessment can't start without it.</div>`;
+    CAM_STREAM.getTracks().forEach(t=>t.stop()); CAM_STREAM = null;
+    btn.disabled = false; btn.textContent = 'Continue to Assessment';
+    return;
+  }
   {
     const v = document.getElementById('camPreview'); v.srcObject = CAM_STREAM; v.hidden = false;
     startRecording_();
   }
-  if (document.getElementById('shareScreenOpt')?.checked){
-    try{
-      SCREEN_STREAM = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      startScreenRecording_();
-    }catch(e){ logActivity_('screen_share_declined', String(e && e.name || e)); }
+  {
+    startScreenRecording_();
   }
   startIntegrityWatch_();
   startIntegrityChecks_();
