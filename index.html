@@ -21,7 +21,14 @@
   label{display:block;font-size:12px;font-weight:700;color:#fdba74;margin:14px 0 6px}
   input[type=text],input[type=email],textarea{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#fff;font-size:14px}
   textarea{min-height:110px;resize:vertical}
-  .btn{margin-top:20px;width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--orange),var(--orange-dark));color:#fff;font-weight:800;font-size:14px;cursor:pointer}
+  .btn{margin-top:20px;width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--orange),var(--orange-dark));color:#fff;font-weight:800;font-size:14px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,opacity .15s ease}
+  .btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 18px rgba(249,115,22,.35)}
+  .btn:active:not(:disabled){transform:translateY(0);box-shadow:none}
+  .btn:disabled{opacity:.6;cursor:default;transform:none;box-shadow:none}
+  .ghost-btn,.exam-actions button:not(.btn){transition:background .15s ease,transform .15s ease}
+  .ghost-btn:hover,.exam-actions button:not(.btn):hover{transform:translateY(-1px)}
+  #examBody,.question-card{animation:fadeSlideIn .25s ease}
+  @keyframes fadeSlideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e5e7eb}
   .btn.small{margin-top:0;width:auto;padding:8px 14px;font-size:12.5px}
@@ -79,10 +86,11 @@
   .sidebar-progress-text{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6}
   .sidebar-progress-text b{color:#fdba74}
   .qgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:16px}
-  .qblock{aspect-ratio:1;border-radius:8px;border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;position:relative;background:rgba(255,255,255,.03)}
+  .qblock{aspect-ratio:1;border-radius:8px;border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;position:relative;background:rgba(255,255,255,.03);transition:transform .12s ease,background .15s ease,border-color .15s ease}
+  .qblock:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.35)}
   .qblock.answered{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4);color:#86efac}
   .qblock.skipped{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2);color:var(--muted)}
-  .qblock.current{outline:2px solid var(--orange);outline-offset:1px}
+  .qblock.current{outline:2px solid var(--orange);outline-offset:1px;transform:scale(1.05)}
   .qblock .flag-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#facc15;border:1px solid #151210}
   .qlegend{font-size:10.5px;color:var(--muted);display:flex;flex-direction:column;gap:5px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
   .qlegend span{display:flex;align-items:center;gap:6px}
@@ -294,7 +302,7 @@ function renderIntro(name, jobTitle){
     <p class="sub">You're about to start the online assessment for <b>${esc(jobTitle)}</b>.</p>
     <div class="hint">
       &bull; <b>Total time for this assessment: ${TOTAL_DURATION_MIN_ || '—'} minutes</b>, already counting down since you logged in. The remaining time stays visible at the top of the screen throughout.<br>
-      &bull; Camera and microphone will be used if available, recorded for review - the assessment still proceeds if either isn't available on your device.<br>
+      &bull; <b>Camera and microphone are mandatory</b> for this assessment and are recorded for review - you won't be able to start without granting both.<br>
       &bull; Each question has its own time limit - it auto-advances when time runs out.<br>
       &bull; You can <b>skip</b> a question and come back to it later, and <b>flag</b> any question for your own review.<br>
       &bull; Before final submission you'll see a review screen with every question and your answer.<br>
@@ -316,21 +324,18 @@ async function requestCameraAndStart_(){
   btn.disabled = true; btn.textContent = 'Setting up...';
   try{
     CAM_STREAM = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  }catch(bothErr){
-    try{
-      CAM_STREAM = await navigator.mediaDevices.getUserMedia({ video: true });
-      logActivity_('microphone_unavailable', String(bothErr && bothErr.name || bothErr));
-    }catch(camErr){
-      const name = camErr && camErr.name || '';
-      const helpHtml = name === 'NotAllowedError'
-        ? `Camera/microphone are currently <b>blocked for this site</b> in your browser. If you'd like to enable them: tap the lock/info icon next to the address bar &rarr; Permissions &rarr; Camera/Microphone &rarr; Allow &rarr; reload. This is optional - you can continue the assessment without them.`
-        : `Camera/microphone aren't available on this device. Continuing without them.`;
-      errBox.innerHTML = `<div class="err">${helpHtml}</div>`;
-      logActivity_('camera_denied', String(name) + ' ' + String(camErr && camErr.message || camErr));
-      CAM_STREAM = null;
-    }
+  }catch(camErr){
+    const name = camErr && camErr.name || '';
+    const helpHtml = name === 'NotAllowedError'
+      ? `Camera and microphone are currently <b>blocked for this site</b> in your browser. Tap the lock/info icon next to the address bar &rarr; Permissions &rarr; Camera/Microphone &rarr; Allow &rarr; then try again. <b>Both are mandatory</b> - the assessment can't start without them.`
+      : `Camera and microphone could not be accessed on this device (${esc(name || 'unknown error')}). Please connect/enable a working camera and microphone, then try again.`;
+    errBox.innerHTML = `<div class="err">${helpHtml}</div>`;
+    logActivity_('camera_denied', String(name) + ' ' + String(camErr && camErr.message || camErr));
+    CAM_STREAM = null;
+    btn.disabled = false; btn.textContent = 'Continue to Assessment';
+    return;
   }
-  if (CAM_STREAM){
+  {
     const v = document.getElementById('camPreview'); v.srcObject = CAM_STREAM; v.hidden = false;
     startRecording_();
   }
@@ -361,7 +366,7 @@ function startScreenRecording_(){
       reader.readAsDataURL(e.data);
     };
     SCREEN_RECORDER.start(60000);
-    SCREEN_STREAM.getVideoTracks()[0]?.addEventListener('ended', ()=>logActivity_('screen_share_stopped',''));
+    SCREEN_STREAM.getVideoTracks()[0]?.addEventListener('ended', ()=>terminateForViolation_('screen_share_stopped', 'You stopped screen sharing.'));
   }catch(e){}
 }
 function stopScreenRecording_(){
@@ -400,10 +405,29 @@ function logActivity_(eventType, detail){
 }
 
 let INTEGRITY_WATCH_STARTED_=false;
+let TERMINATING_=false;
+// A tab switch, a stopped screen share, or a lost camera/mic feed isn't just
+// logged anymore - it ends the assessment outright, with a brief on-screen
+// warning first so the candidate understands what happened and why, then
+// the same guaranteed-delivery submit path the overall-timer auto-submit uses.
+function terminateForViolation_(reason, label){
+  if (TERMINATING_ || SUBMITTING_) return;
+  TERMINATING_ = true;
+  logActivity_(reason, 'Assessment auto-terminated for this violation.');
+  clearInterval(TIMER); clearInterval(OVERALL_TIMER);
+  examBody().innerHTML = `<div class="center" style="padding:60px 0">
+    <div class="err-icon">!</div>
+    <h2>Assessment ended</h2>
+    <p class="sub">${esc(label)} This is not allowed during the assessment, so it has been ended and your answers so far are being submitted automatically.</p>
+  </div>`;
+  setTimeout(()=>finalSubmitAll_(true), 2500);
+}
 function startIntegrityWatch_(){
   if (INTEGRITY_WATCH_STARTED_) return;
   INTEGRITY_WATCH_STARTED_=true;
-  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) logActivity_('tab_hidden',''); });
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.hidden) terminateForViolation_('tab_hidden', 'You switched away from this tab/window.');
+  });
   window.addEventListener('blur', ()=>{ document.body.classList.add('window-blurred'); logActivity_('window_blurred',''); });
   window.addEventListener('focus', ()=>{ document.body.classList.remove('window-blurred'); });
   document.addEventListener('contextmenu', e=>{ e.preventDefault(); logActivity_('context_menu_blocked',''); });
@@ -419,7 +443,7 @@ function startIntegrityWatch_(){
   });
   if (CAM_STREAM){
     CAM_STREAM.getTracks().forEach(t=>{
-      t.addEventListener('ended', ()=>logActivity_('camera_or_mic_lost', t.kind));
+      t.addEventListener('ended', ()=>terminateForViolation_('camera_or_mic_lost', 'Your camera/microphone feed was lost.'));
     });
   }
 }
@@ -620,15 +644,15 @@ async function finalSubmitAll_(auto){
   SUBMITTING_ = true;
   clearInterval(TIMER); clearInterval(OVERALL_TIMER);
   examBody().innerHTML = `<div class="center" style="padding:60px 0"><div class="spinner"></div><p class="sub" style="margin-top:8px">${auto?'Time\'s up — submitting your answers...':'Submitting your assessment...'}</p></div>`;
-  for (const q of QUESTIONS){
+  await Promise.all(QUESTIONS.map(q=>{
     const a = ANSWERS[q.questionId];
-    if (!a || a.skipped) continue;
+    if (!a || a.skipped) return Promise.resolve();
     const payload = { elapsedSeconds: a.elapsedSeconds };
     const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
     if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
     else payload.answerText = a.answerText;
-    try{ await callApi('submitAnswer', SESSION_ID, PORTAL_TOKEN, q.questionId, payload); }catch(e){}
-  }
+    return callApi('submitAnswer', SESSION_ID, PORTAL_TOKEN, q.questionId, payload).catch(()=>{});
+  }));
   stopRecording_(); stopScreenRecording_();
   try{
     const res = await callApi('finishSession', SESSION_ID, PORTAL_TOKEN);
