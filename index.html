@@ -691,15 +691,46 @@ async function finalSubmitAll_(auto){
     const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
     if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
     else payload.answerText = a.answerText;
-    return callApi('submitAnswer', SESSION_ID, PORTAL_TOKEN, q.questionId, payload).catch(()=>{});
+    return callApiRetry_('submitAnswer', [SESSION_ID, PORTAL_TOKEN, q.questionId, payload]).catch(()=>{});
   }));
   stopRecording_(); stopScreenRecording_();
   try{
-    const res = await callApi('finishSession', SESSION_ID, PORTAL_TOKEN);
+    const res = await callApiRetry_('finishSession', [SESSION_ID, PORTAL_TOKEN]);
     renderDone_(res);
   }catch(e){
-    renderDone_(null);
+    // Do NOT tell the candidate this is done when it isn't - that's exactly
+    // what caused sessions to sit silently stuck "In Progress" with the
+    // candidate believing everything had gone through. Give them a visible
+    // retry instead; their answers are already saved server-side at this
+    // point (submitAnswer succeeded above), only the final "mark complete"
+    // step needs to land.
+    SUBMITTING_ = false;
+    renderSubmitError_();
   }
+}
+
+function renderSubmitError_(){
+  examBody().innerHTML = `<div class="center" style="padding:60px 0">
+    <div class="err-icon">!</div>
+    <h2>Couldn't finalize your submission</h2>
+    <p class="sub">Your answers were saved, but we couldn't confirm the final submission because of a connection issue. Please don't close this tab - tap Retry below.</p>
+    <button class="btn" id="retrySubmitBtn" style="max-width:260px;margin:16px auto 0">Retry</button>
+    <p class="sub" style="margin-top:14px;font-size:12px">Still stuck? Contact HR support at <b>${SUPPORT_EMAIL_}</b>.</p>
+  </div>`;
+  document.getElementById('retrySubmitBtn').onclick = ()=>finalSubmitAll_(false);
+}
+
+// Wraps a callApi call with a few retries (network blips, not persistent
+// failures) before giving up - used for the submission path specifically,
+// where silently failing once used to look identical to succeeding.
+async function callApiRetry_(action, args, retries){
+  retries = retries == null ? 3 : retries;
+  let lastErr;
+  for (let i = 0; i < retries; i++){
+    try{ return await callApi(action, ...args); }
+    catch(e){ lastErr = e; if (i < retries - 1) await new Promise(r=>setTimeout(r, 700 * (i + 1))); }
+  }
+  throw lastErr;
 }
 
 function renderDone_(res){
