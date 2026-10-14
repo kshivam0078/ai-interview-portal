@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mentors Eduserv — Online Interview Assessment</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="shortcut icon" type="image/png" href="https://ranneeti.mentorsedu.com/img/ME-Circle_Orange.png">
+<style>
+  :root{--orange:#f97316;--orange-dark:#c2410c;--bg:#0e0e11;--card:#1c1612;--text:#e5e7eb;--muted:#9ca3af}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#151210,#0e0e11);color:var(--text);min-height:100vh}
+  .center-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .wrap{width:100%;max-width:520px}
+  .brand{text-align:center;margin-bottom:18px}
+  .brand b{color:var(--orange);font-size:20px}
+  .brand small{display:block;color:var(--muted);margin-top:4px}
+  .card{background:linear-gradient(160deg,rgba(28,22,18,.94),rgba(14,14,17,.97));border:1px solid rgba(249,115,22,.28);border-radius:18px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.4)}
+  h2{margin:0 0 6px;font-size:19px}
+  p.sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+  label{display:block;font-size:12px;font-weight:700;color:#fdba74;margin:14px 0 6px}
+  input[type=text],input[type=email],textarea{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#fff;font-size:14px}
+  textarea{min-height:110px;resize:vertical}
+  .btn{margin-top:20px;width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--orange),var(--orange-dark));color:#fff;font-weight:800;font-size:14px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e5e7eb}
+  .btn.small{margin-top:0;width:auto;padding:8px 14px;font-size:12.5px}
+  .err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#fca5a5;padding:10px 12px;border-radius:10px;font-size:13px;margin-top:14px}
+  .hint{font-size:11px;color:var(--muted);margin-top:16px;line-height:1.5}
+  .center{text-align:center}
+  .score{font-size:40px;font-weight:900;color:var(--orange);margin:10px 0}
+  .logo{width:64px;height:64px;border-radius:16px;background:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;box-shadow:0 8px 22px rgba(249,115,22,.35);padding:6px}
+  .logo img{width:100%;height:100%;object-fit:contain}
+  .spinner{width:26px;height:26px;border-radius:50%;border:3px solid rgba(249,115,22,.25);border-top-color:var(--orange);animation:spin 0.8s linear infinite;margin:8px auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .footer-note{text-align:center;margin-top:16px;font-size:11px;color:#6b7280}
+  .footer-note b{color:#9ca3af}
+  .err-icon{width:44px;height:44px;border-radius:50%;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:20px}
+  #qBody{-webkit-user-select:none;user-select:none}
+  textarea,input{-webkit-user-select:text;user-select:text}
+  .blur-guard{filter:blur(0);transition:filter .15s ease}
+  body.window-blurred .blur-guard{filter:blur(14px)}
+  video{position:fixed;bottom:16px;right:16px;width:150px;border-radius:10px;border:1px solid rgba(255,255,255,.2);opacity:.85;z-index:50}
+  .rec-dot{position:fixed;bottom:150px;right:16px;z-index:51;display:flex;align-items:center;gap:6px;font-size:11px;color:#f87171;font-weight:800}
+  .rec-dot i{width:8px;height:8px;border-radius:50%;background:#ef4444;animation:blink 1.2s infinite}
+  @keyframes blink{50%{opacity:.2}}
+
+  /* ---- Full-page exam layout ---- */
+  .exam-shell{display:none;min-height:100vh;grid-template-columns:1fr 280px}
+  .exam-shell.active{display:grid}
+  .exam-main{padding:24px 32px;display:flex;flex-direction:column}
+  .exam-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:20px}
+  .exam-header-left{display:flex;align-items:center;gap:10px}
+  .exam-header-left img{width:34px;height:34px;border-radius:8px;background:#fff;padding:3px}
+  .exam-header-left b{color:var(--orange);font-size:15px}
+  .exam-header-left small{display:block;color:var(--muted);font-size:11px}
+  .exam-overall-timer{font-weight:800;color:#fdba74;font-size:13px;background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.25);padding:6px 12px;border-radius:999px}
+  .exam-overall-timer.low{color:#f87171;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35)}
+  .qhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .qnum{font-size:12px;color:var(--muted)}
+  .timer{font-weight:800;color:#fdba74;font-size:13px}
+  .timer.low{color:#f87171}
+  .progress{height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin-bottom:16px;overflow:hidden}
+  .progress i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),var(--orange-dark))}
+  .opt{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.14);margin-top:10px;cursor:pointer}
+  .opt.sel{border-color:var(--orange);background:rgba(249,115,22,.14)}
+  .opt input{width:auto}
+  .exam-actions{margin-top:auto;padding-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+  .exam-actions .btn{margin-top:0;width:auto;flex:1;min-width:140px}
+  .flag-btn{background:transparent;border:1px solid rgba(250,204,21,.4);color:#facc15}
+  .flag-btn.flagged{background:rgba(250,204,21,.15)}
+  .skip-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e5e7eb}
+
+  /* ---- Sidebar question navigator ---- */
+  .exam-sidebar{background:rgba(0,0,0,.25);border-left:1px solid rgba(255,255,255,.08);padding:22px 18px;display:flex;flex-direction:column}
+  .sidebar-candidate{margin-bottom:16px}
+  .sidebar-candidate b{display:block;font-size:14px;color:#fff}
+  .sidebar-candidate small{color:var(--muted);font-size:11px}
+  .sidebar-progress-text{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6}
+  .sidebar-progress-text b{color:#fdba74}
+  .qgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:16px}
+  .qblock{aspect-ratio:1;border-radius:8px;border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;position:relative;background:rgba(255,255,255,.03)}
+  .qblock.answered{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.4);color:#86efac}
+  .qblock.skipped{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2);color:var(--muted)}
+  .qblock.current{outline:2px solid var(--orange);outline-offset:1px}
+  .qblock .flag-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#facc15;border:1px solid #151210}
+  .qlegend{font-size:10.5px;color:var(--muted);display:flex;flex-direction:column;gap:5px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+  .qlegend span{display:flex;align-items:center;gap:6px}
+  .qlegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  /* ---- Review page ---- */
+  .review-list{overflow-y:auto;flex:1}
+  .review-item{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+  .review-item .rq{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+  .review-item b{font-size:13px}
+  .review-item .ra{font-size:12.5px;color:var(--muted);margin-top:5px}
+  .review-item .ra b{color:#e5e7eb}
+  .review-edit{background:transparent;border:1px solid rgba(249,115,22,.4);color:var(--orange);padding:5px 12px;border-radius:8px;font-size:11px;cursor:pointer;white-space:nowrap}
+
+  @media(max-width:860px){
+    .exam-shell.active{grid-template-columns:1fr}
+    .exam-sidebar{border-left:none;border-top:1px solid rgba(255,255,255,.08);flex-direction:row;flex-wrap:wrap;align-items:center}
+    .qgrid{grid-template-columns:repeat(8,1fr);flex:1}
+    .qlegend{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="center-wrap" id="centerWrap">
+  <div class="wrap blur-guard" id="wrap">
+    <div class="brand"><div class="logo"><img src="https://ranneeti.mentorsedu.com/img/ME-Circle_Orange.png" alt="Mentors Eduserv"></div><b>MENTORS EDUSERV</b><small>Online Interview Assessment Portal</small></div>
+    <div class="card" id="app"><div class="center"><div class="spinner"></div><p class="sub" style="margin-top:8px">Loading your assessment...</p></div></div>
+    <div class="footer-note">Secured session &middot; <b>Mentors Eduserv Mumbai HRMS</b> &middot; Do not share your access code with anyone</div>
+  </div>
+</div>
+
+<div class="exam-shell blur-guard" id="examShell">
+  <div class="exam-main">
+    <div class="exam-header">
+      <div class="exam-header-left">
+        <img src="https://ranneeti.mentorsedu.com/img/ME-Circle_Orange.png" alt="">
+        <div><b>MENTORS EDUSERV</b><small>Online Interview Assessment</small></div>
+      </div>
+      <div class="exam-overall-timer" id="overallTimer"><span id="overallTimerTotal"></span><span id="overallTimerRemaining">--:--</span> left</div>
+    </div>
+    <div id="examBody"></div>
+  </div>
+  <div class="exam-sidebar">
+    <div class="sidebar-candidate">
+      <b id="sbCandidateName">Candidate</b>
+      <small id="sbJobTitle"></small>
+    </div>
+    <div class="sidebar-progress-text" id="sbProgressText"></div>
+    <div class="qgrid" id="qGrid"></div>
+    <div class="qlegend">
+      <span><i style="background:rgba(34,197,94,.5);border:1px solid rgba(34,197,94,.7)"></i> Answered</span>
+      <span><i style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3)"></i> Not answered</span>
+      <span><i style="background:#facc15"></i> Flagged for review</span>
+    </div>
+  </div>
+</div>
+
+<video id="camPreview" autoplay muted playsinline hidden></video>
+<div class="rec-dot" id="recDot" hidden><i></i> Recording in progress</div>
+
+<script>
+// ======================================================================
+// Mentors Eduserv — Online Interview Assessment (externally hosted)
+//
+// Hosted outside Apps Script entirely so Google's unremovable "This
+// application was created by a Google Apps Script user" banner (which
+// lives in a different, cross-origin frame from any Apps-Script-served
+// page's own content, and so can never be reached/hidden by that page's
+// own JS) never appears here. All actual data/scoring logic still lives
+// in the HRMS's Apps Script project — this page only talks to it over a
+// plain JSON HTTP API (doPost in 09_WebApp.js), not google.script.run
+// (which only works for pages Apps Script itself serves).
+// ======================================================================
+
+// TODO after first deploy: replace with the live Apps Script /exec URL.
+const API_URL = 'https://script.google.com/macros/s/AKfycbxN7oQL8SMuh1RCBgZhPD8UvvyxqzZffjE2AySFFFA6tHcFoC1K76LOGedLtO2b11-s/exec';
+
+function getSessionIdFromUrl_(){
+  return new URLSearchParams(window.location.search).get('session') || '';
+}
+const SESSION_ID = getSessionIdFromUrl_();
+let PORTAL_TOKEN = sessionStorage.getItem('aiInterviewToken_' + SESSION_ID) || '';
+let SESSION_DEADLINE_ = null; // Date
+let LOGIN_TIME_ = null; // Date — used only to show "Total: Xm" alongside the live countdown
+let TOTAL_DURATION_MIN_ = null;
+let QUESTIONS = [];
+let ANSWERS = {};   // questionId -> {selectedOption|answerText, elapsedSeconds, skipped:bool}
+let FLAGS = {};     // questionId -> true
+let Q_INDEX = 0;
+let TIMER = null;
+let OVERALL_TIMER = null;
+let CAM_STREAM = null;
+let SCREEN_STREAM = null;
+let Q_START_TIME_ = null;
+let RECORDER = null;
+let SCREEN_RECORDER = null;
+let REC_CHUNK_INDEX_ = 0;
+let SCREEN_CHUNK_INDEX_ = 0;
+let DEVICE_FINGERPRINT_ = null;
+let LOGIN_LOCATION_ = '';
+let INTEGRITY_CHECK_INTERVAL_ = null;
+let SUBMITTING_ = false;
+
+// Plain HTTP call to the Apps Script JSON API. Content-Type: text/plain
+// is deliberate — a "simple request" (GET or POST with text/plain,
+// application/x-www-form-urlencoded, or multipart/form-data) needs no
+// CORS preflight, which Apps Script's doPost has no way to answer.
+// application/json would trigger a preflight OPTIONS request and fail.
+async function callApi(action, ...args){
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, args })
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Request failed.');
+  return json.result;
+}
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function app(){ return document.getElementById('app'); }
+function examBody(){ return document.getElementById('examBody'); }
+
+function showLoginShell_(){
+  document.getElementById('centerWrap').style.display = 'flex';
+  document.getElementById('examShell').classList.remove('active');
+}
+function showExamShell_(){
+  document.getElementById('centerWrap').style.display = 'none';
+  document.getElementById('examShell').classList.add('active');
+}
+
+function isMobileDevice_(){
+  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent);
+}
+function renderMobileBlock_(){
+  app().innerHTML = `
+    <div class="center" style="text-align:center;padding:10px 0">
+      <div style="font-size:40px;margin-bottom:10px">💻</div>
+      <h2>Please use a desktop or laptop</h2>
+      <p class="sub">This assessment uses camera and screen monitoring that only works reliably on a desktop/laptop browser. Please open this same link on a computer to continue.</p>
+    </div>`;
+}
+
+function computeDeviceFingerprint_(){
+  try{
+    return [navigator.userAgent, screen.width+'x'+screen.height, navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone, navigator.hardwareConcurrency||''].join('|');
+  }catch(e){ return 'unknown'; }
+}
+async function fetchRoughLocation_(){
+  try{
+    const res = await fetch('https://ipapi.co/json/', { cache: 'no-store' });
+    if (!res.ok) return '';
+    const j = await res.json();
+    return [j.city, j.region, j.country_name].filter(Boolean).join(', ');
+  }catch(e){ return ''; }
+}
+function startIntegrityChecks_(){
+  clearInterval(INTEGRITY_CHECK_INTERVAL_);
+  INTEGRITY_CHECK_INTERVAL_ = setInterval(async ()=>{
+    if (!PORTAL_TOKEN) return;
+    const loc = await fetchRoughLocation_();
+    try{ await callApi('checkIntegrity', SESSION_ID, PORTAL_TOKEN, computeDeviceFingerprint_(), loc); }catch(e){}
+  }, 5*60000);
+}
+
+function renderLogin(err){
+  showLoginShell_();
+  app().innerHTML = `
+    <h2>Welcome</h2>
+    <p class="sub">Enter the email and access code from your invitation email.</p>
+    <label>Email address</label>
+    <input type="email" id="liEmail" placeholder="you@example.com">
+    <label>Access code</label>
+    <input type="text" id="liCode" placeholder="10-character code">
+    ${err?`<div class="err">${esc(err)}</div>`:''}
+    <button class="btn" id="liBtn">Continue</button>
+    <div class="hint">This assessment requires camera and microphone access for the full session, used for identity verification and recorded for review purposes only - never shared beyond Mentors Eduserv HR.</div>
+  `;
+  document.getElementById('liBtn').onclick = doLogin;
+}
+
+async function doLogin(){
+  const email = document.getElementById('liEmail').value.trim();
+  const code = document.getElementById('liCode').value.trim();
+  if (!email || !code){ renderLogin('Please enter both your email and access code.'); return; }
+  app().innerHTML = '<div class="center"><div class="spinner"></div><p class="sub" style="margin-top:8px">Verifying...</p></div>';
+  DEVICE_FINGERPRINT_ = computeDeviceFingerprint_();
+  LOGIN_LOCATION_ = await fetchRoughLocation_();
+  try{
+    const res = await callApi('login', SESSION_ID, email, code, DEVICE_FINGERPRINT_, LOGIN_LOCATION_);
+    PORTAL_TOKEN = res.portalToken;
+    sessionStorage.setItem('aiInterviewToken_' + SESSION_ID, PORTAL_TOKEN);
+    LOGIN_TIME_ = new Date();
+    if (res.sessionDeadline){
+      SESSION_DEADLINE_ = new Date(res.sessionDeadline);
+      TOTAL_DURATION_MIN_ = Math.max(1, Math.round((SESSION_DEADLINE_.getTime() - LOGIN_TIME_.getTime()) / 60000));
+    }
+    renderIntro(res.candidateName, res.jobTitle);
+  }catch(e){ renderLogin(e.message || String(e)); }
+}
+
+function renderIntro(name, jobTitle){
+  document.getElementById('sbCandidateName').textContent = name || 'Candidate';
+  document.getElementById('sbJobTitle').textContent = jobTitle || '';
+  app().innerHTML = `
+    <h2>Hi ${esc(name)}</h2>
+    <p class="sub">You're about to start the online assessment for <b>${esc(jobTitle)}</b>.</p>
+    <div class="hint">
+      &bull; <b>Total time for this assessment: ${TOTAL_DURATION_MIN_ || '—'} minutes</b>, already counting down since you logged in. The remaining time stays visible at the top of the screen throughout.<br>
+      &bull; Camera and microphone will be used if available, recorded for review - the assessment still proceeds if either isn't available on your device.<br>
+      &bull; Each question has its own time limit - it auto-advances when time runs out.<br>
+      &bull; You can <b>skip</b> a question and come back to it later, and <b>flag</b> any question for your own review.<br>
+      &bull; Before final submission you'll see a review screen with every question and your answer.<br>
+      &bull; Copying question text and pasting into answers is disabled.<br>
+      &bull; Complete it in one sitting - you won't be able to resume once you close this page, unless HR resets your session.
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px;font-weight:600;color:#e5e7eb;cursor:pointer">
+      <input type="checkbox" id="shareScreenOpt" style="width:auto"> Also share my screen for verification (optional)
+    </label>
+    <button class="btn" id="startBtn">Continue to Assessment</button>
+    <div id="camErr"></div>
+  `;
+  document.getElementById('startBtn').onclick = requestCameraAndStart_;
+}
+
+async function requestCameraAndStart_(){
+  const btn = document.getElementById('startBtn');
+  const errBox = document.getElementById('camErr');
+  btn.disabled = true; btn.textContent = 'Setting up...';
+  try{
+    CAM_STREAM = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  }catch(bothErr){
+    try{
+      CAM_STREAM = await navigator.mediaDevices.getUserMedia({ video: true });
+      logActivity_('microphone_unavailable', String(bothErr && bothErr.name || bothErr));
+    }catch(camErr){
+      const name = camErr && camErr.name || '';
+      const helpHtml = name === 'NotAllowedError'
+        ? `Camera/microphone are currently <b>blocked for this site</b> in your browser. If you'd like to enable them: tap the lock/info icon next to the address bar &rarr; Permissions &rarr; Camera/Microphone &rarr; Allow &rarr; reload. This is optional - you can continue the assessment without them.`
+        : `Camera/microphone aren't available on this device. Continuing without them.`;
+      errBox.innerHTML = `<div class="err">${helpHtml}</div>`;
+      logActivity_('camera_denied', String(name) + ' ' + String(camErr && camErr.message || camErr));
+      CAM_STREAM = null;
+    }
+  }
+  if (CAM_STREAM){
+    const v = document.getElementById('camPreview'); v.srcObject = CAM_STREAM; v.hidden = false;
+    startRecording_();
+  }
+  if (document.getElementById('shareScreenOpt')?.checked){
+    try{
+      SCREEN_STREAM = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      startScreenRecording_();
+    }catch(e){ logActivity_('screen_share_declined', String(e && e.name || e)); }
+  }
+  startIntegrityWatch_();
+  startIntegrityChecks_();
+  startOverallTimer_();
+  loadQuestions();
+}
+
+function startScreenRecording_(){
+  try{
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : 'video/webm';
+    SCREEN_RECORDER = new MediaRecorder(SCREEN_STREAM, { mimeType, videoBitsPerSecond: 200000 });
+    SCREEN_RECORDER.ondataavailable = e=>{
+      if (!e.data || !e.data.size) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const base64 = String(reader.result).split(',')[1];
+        const idx = SCREEN_CHUNK_INDEX_++;
+        callApi('uploadRecordingChunk', SESSION_ID, PORTAL_TOKEN, base64, idx, 'screen').catch(()=>{});
+      };
+      reader.readAsDataURL(e.data);
+    };
+    SCREEN_RECORDER.start(60000);
+    SCREEN_STREAM.getVideoTracks()[0]?.addEventListener('ended', ()=>logActivity_('screen_share_stopped',''));
+  }catch(e){}
+}
+function stopScreenRecording_(){
+  try{ if (SCREEN_RECORDER && SCREEN_RECORDER.state !== 'inactive') SCREEN_RECORDER.requestData(); }catch(e){}
+  try{ if (SCREEN_RECORDER && SCREEN_RECORDER.state !== 'inactive') SCREEN_RECORDER.stop(); }catch(e){}
+  try{ if (SCREEN_STREAM) SCREEN_STREAM.getTracks().forEach(t=>t.stop()); }catch(e){}
+}
+
+function startRecording_(){
+  try{
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
+    RECORDER = new MediaRecorder(CAM_STREAM, { mimeType, videoBitsPerSecond: 250000 });
+    RECORDER.ondataavailable = e=>{
+      if (!e.data || !e.data.size) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const base64 = String(reader.result).split(',')[1];
+        const idx = REC_CHUNK_INDEX_++;
+        callApi('uploadRecordingChunk', SESSION_ID, PORTAL_TOKEN, base64, idx, 'camera').catch(()=>{});
+      };
+      reader.readAsDataURL(e.data);
+    };
+    RECORDER.start(60000);
+    document.getElementById('recDot').hidden = false;
+  }catch(e){}
+}
+function stopRecording_(){
+  try{ if (RECORDER && RECORDER.state !== 'inactive') RECORDER.requestData(); }catch(e){}
+  try{ if (RECORDER && RECORDER.state !== 'inactive') RECORDER.stop(); }catch(e){}
+  document.getElementById('recDot').hidden = true;
+}
+
+function logActivity_(eventType, detail){
+  if (!PORTAL_TOKEN) return;
+  callApi('logActivity', SESSION_ID, PORTAL_TOKEN, eventType, detail||'').catch(()=>{});
+}
+
+let INTEGRITY_WATCH_STARTED_=false;
+function startIntegrityWatch_(){
+  if (INTEGRITY_WATCH_STARTED_) return;
+  INTEGRITY_WATCH_STARTED_=true;
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) logActivity_('tab_hidden',''); });
+  window.addEventListener('blur', ()=>{ document.body.classList.add('window-blurred'); logActivity_('window_blurred',''); });
+  window.addEventListener('focus', ()=>{ document.body.classList.remove('window-blurred'); });
+  document.addEventListener('contextmenu', e=>{ e.preventDefault(); logActivity_('context_menu_blocked',''); });
+  document.addEventListener('copy', e=>{ e.preventDefault(); logActivity_('copy_blocked',''); });
+  document.addEventListener('cut', e=>{ e.preventDefault(); logActivity_('cut_blocked',''); });
+  document.addEventListener('paste', e=>{
+    e.preventDefault();
+    logActivity_('paste_blocked', e.target && e.target.id === 'txtAnswer' ? 'Attempted paste into a short-answer box.' : '');
+  });
+  document.addEventListener('keydown', e=>{
+    const blocked = (e.key === 'PrintScreen') || (e.ctrlKey && e.shiftKey && ['I','J','C','S'].includes(e.key.toUpperCase())) || (e.metaKey && e.shiftKey);
+    if (blocked){ e.preventDefault(); logActivity_('shortcut_blocked', e.key); }
+  });
+  if (CAM_STREAM){
+    CAM_STREAM.getTracks().forEach(t=>{
+      t.addEventListener('ended', ()=>logActivity_('camera_or_mic_lost', t.kind));
+    });
+  }
+}
+
+// ---- Overall session countdown (client-side mirror of the server deadline) ----
+// Proactively triggers final submission ~20s BEFORE the server's own hard
+// cutoff, so whatever's been answered so far is guaranteed to reach the
+// backend instead of being lost if the server's deadline check fires
+// first on some other call.
+function startOverallTimer_(){
+  if (!SESSION_DEADLINE_) return;
+  const totalEl = document.getElementById('overallTimerTotal');
+  if (totalEl && TOTAL_DURATION_MIN_) totalEl.textContent = `Total ${TOTAL_DURATION_MIN_}m · `;
+  clearInterval(OVERALL_TIMER);
+  OVERALL_TIMER = setInterval(()=>{
+    const msLeft = SESSION_DEADLINE_.getTime() - Date.now();
+    const wrap = document.getElementById('overallTimer');
+    const remEl = document.getElementById('overallTimerRemaining');
+    if (!wrap || !remEl) return;
+    if (msLeft <= 0){
+      clearInterval(OVERALL_TIMER);
+      remEl.textContent = '00:00';
+      finalSubmitAll_(true);
+      return;
+    }
+    const totalSec = Math.floor(msLeft/1000);
+    const mm = Math.floor(totalSec/60), ss = totalSec%60;
+    remEl.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+    wrap.classList.toggle('low', totalSec <= 120);
+    if (totalSec <= 20 && !SUBMITTING_){ clearInterval(OVERALL_TIMER); finalSubmitAll_(true); }
+  }, 1000);
+}
+
+async function loadQuestions(){
+  showExamShell_();
+  examBody().innerHTML = '<div class="center" style="padding:60px 0"><div class="spinner"></div><p class="sub" style="margin-top:8px">Loading questions...</p></div>';
+  try{
+    const res = await callApi('getQuestions', SESSION_ID, PORTAL_TOKEN);
+    if (!res.questions || !res.questions.length){ renderFatalError_('No questions are available for this assessment yet.'); return; }
+    QUESTIONS = res.questions;
+    Q_INDEX = 0;
+    renderSidebar_();
+    renderQuestion();
+  }catch(e){
+    examBody().innerHTML = `<div class="err">${esc(e.message||String(e))}</div>`;
+  }
+}
+
+function captureSnapshot_(){
+  try{
+    if (!CAM_STREAM) return null;
+    const v = document.getElementById('camPreview');
+    const c = document.createElement('canvas'); c.width = 240; c.height = 180;
+    c.getContext('2d').drawImage(v, 0, 0, 240, 180);
+    return c.toDataURL('image/jpeg', 0.6);
+  }catch(e){ return null; }
+}
+
+function renderSidebar_(){
+  const grid = document.getElementById('qGrid');
+  grid.innerHTML = QUESTIONS.map((q,i)=>{
+    const a = ANSWERS[q.questionId];
+    const cls = ['qblock'];
+    if (i === Q_INDEX) cls.push('current');
+    if (a && !a.skipped) cls.push('answered');
+    else if (a && a.skipped) cls.push('skipped');
+    const flagDot = FLAGS[q.questionId] ? '<span class="flag-dot"></span>' : '';
+    return `<div class="${cls.join(' ')}" onclick="jumpToQuestion_(${i})">${i+1}${flagDot}</div>`;
+  }).join('');
+  const answeredCount = QUESTIONS.filter(q=>ANSWERS[q.questionId] && !ANSWERS[q.questionId].skipped).length;
+  const flaggedCount = Object.keys(FLAGS).filter(k=>FLAGS[k]).length;
+  document.getElementById('sbProgressText').innerHTML = `<b>${answeredCount}</b> of ${QUESTIONS.length} answered${flaggedCount?` &middot; <b>${flaggedCount}</b> flagged`:''}`;
+}
+
+function jumpToQuestion_(i){
+  saveCurrentAnswerLocally_(false);
+  Q_INDEX = i;
+  renderQuestion();
+}
+
+function saveCurrentAnswerLocally_(skipped){
+  const q = QUESTIONS[Q_INDEX];
+  if (!q) return;
+  const elapsedSeconds = Q_START_TIME_ ? Math.round((Date.now()-Q_START_TIME_)/1000) : null;
+  if (skipped){
+    if (!ANSWERS[q.questionId]) ANSWERS[q.questionId] = { skipped: true, elapsedSeconds };
+    renderSidebar_();
+    return;
+  }
+  if (q.type === 'MCQ'){
+    const checked = document.querySelector('input[name=opt]:checked');
+    if (checked) ANSWERS[q.questionId] = { selectedOption: checked.value, elapsedSeconds, skipped: false };
+  } else {
+    const txt = document.getElementById('txtAnswer');
+    if (txt && txt.value.trim()) ANSWERS[q.questionId] = { answerText: txt.value.trim(), elapsedSeconds, skipped: false };
+  }
+  renderSidebar_();
+}
+
+function toggleFlag_(){
+  const q = QUESTIONS[Q_INDEX];
+  FLAGS[q.questionId] = !FLAGS[q.questionId];
+  renderSidebar_();
+  renderQuestion();
+}
+
+function renderQuestion(){
+  const q = QUESTIONS[Q_INDEX];
+  const existing = ANSWERS[q.questionId];
+  const pct = Math.round(((Q_INDEX+1) / QUESTIONS.length) * 100);
+  let bodyHtml = '';
+  if (q.type === 'MCQ'){
+    const opts = [['A',q.optionA],['B',q.optionB],['C',q.optionC],['D',q.optionD]].filter(o=>o[1]);
+    bodyHtml = opts.map(o=>`<label class="opt${existing && existing.selectedOption===o[0]?' sel':''}" data-val="${o[0]}"><input type="radio" name="opt" value="${o[0]}" ${existing && existing.selectedOption===o[0]?'checked':''}> <span>${esc(o[1])}</span></label>`).join('');
+  } else {
+    bodyHtml = `<textarea id="txtAnswer" placeholder="Type your answer here...">${esc(existing && existing.answerText || '')}</textarea>`;
+  }
+  const isLast = Q_INDEX === QUESTIONS.length - 1;
+  const flagged = !!FLAGS[q.questionId];
+  examBody().innerHTML = `
+    <div class="progress"><i style="width:${pct}%"></i></div>
+    <div class="qhead"><span class="qnum">Question ${Q_INDEX+1} of ${QUESTIONS.length}</span><span class="timer" id="timerEl">${q.timeLimitSeconds}s</span></div>
+    <h2>${esc(q.questionText)}</h2>
+    <div id="qBody">${bodyHtml}</div>
+    <div class="exam-actions">
+      <button class="btn skip-btn" id="skipBtn">Skip for now</button>
+      <button class="btn flag-btn${flagged?' flagged':''}" id="flagBtn">${flagged?'🚩 Flagged':'Flag for review'}</button>
+      <button class="btn" id="nextBtn">${isLast?'Review & Submit':'Next Question'}</button>
+    </div>
+  `;
+  if (q.type === 'MCQ'){
+    document.querySelectorAll('.opt').forEach(o=>o.addEventListener('click', ()=>{
+      document.querySelectorAll('.opt').forEach(x=>x.classList.remove('sel'));
+      o.classList.add('sel'); o.querySelector('input').checked = true;
+    }));
+  }
+  document.getElementById('skipBtn').onclick = ()=>{ clearInterval(TIMER); saveCurrentAnswerLocally_(true); goNext_(); };
+  document.getElementById('flagBtn').onclick = toggleFlag_;
+  document.getElementById('nextBtn').onclick = ()=>{ clearInterval(TIMER); saveCurrentAnswerLocally_(false); isLast ? renderReview_() : goNext_(); };
+  renderSidebar_();
+
+  Q_START_TIME_ = Date.now();
+  let timeLeft = q.timeLimitSeconds;
+  clearInterval(TIMER);
+  TIMER = setInterval(()=>{
+    timeLeft--;
+    const t = document.getElementById('timerEl');
+    if (t){ t.textContent = timeLeft+'s'; if (timeLeft<=10) t.classList.add('low'); }
+    if (timeLeft<=0){
+      clearInterval(TIMER);
+      saveCurrentAnswerLocally_(false);
+      if (!ANSWERS[q.questionId]) saveCurrentAnswerLocally_(true); // nothing was selected in time - counts as skipped
+      isLast ? renderReview_() : goNext_();
+    }
+  },1000);
+}
+
+function goNext_(){
+  if (Q_INDEX < QUESTIONS.length - 1){ Q_INDEX++; renderQuestion(); }
+  else renderReview_();
+}
+
+function renderReview_(){
+  clearInterval(TIMER);
+  const items = QUESTIONS.map((q,i)=>{
+    const a = ANSWERS[q.questionId];
+    const flagged = !!FLAGS[q.questionId];
+    let answerLabel = '<i style="color:#f87171">Not answered</i>';
+    if (a && !a.skipped){
+      answerLabel = q.type === 'MCQ' ? `Option <b>${esc(a.selectedOption)}</b>` : `<b>${esc((a.answerText||'').slice(0,120))}${(a.answerText||'').length>120?'…':''}</b>`;
+    }
+    return `<div class="review-item">
+      <div class="rq">
+        <b>${i+1}. ${esc(q.questionText.slice(0,90))}${q.questionText.length>90?'…':''}</b>
+        <button class="review-edit" onclick="jumpToQuestion_(${i})">Edit</button>
+      </div>
+      <div class="ra">${flagged?'🚩 Flagged &middot; ':''}${answerLabel}</div>
+    </div>`;
+  }).join('');
+  const unanswered = QUESTIONS.filter(q=>!ANSWERS[q.questionId] || ANSWERS[q.questionId].skipped).length;
+  examBody().innerHTML = `
+    <h2>Review your answers</h2>
+    <p class="sub">${unanswered>0?`${unanswered} question(s) not answered yet. `:''}Check everything below before final submission - you can't make changes after you submit.</p>
+    <div class="review-list">${items}</div>
+    <div class="exam-actions">
+      <button class="btn" id="finalSubmitBtn">Final Submit</button>
+    </div>
+  `;
+  document.getElementById('finalSubmitBtn').onclick = ()=>finalSubmitAll_(false);
+  renderSidebar_();
+}
+
+// Sends every locally-held answer to the backend, then finalizes the
+// session. Called either by the candidate's own Final Submit click, or
+// automatically ~20s before the overall deadline so nothing is lost.
+async function finalSubmitAll_(auto){
+  if (SUBMITTING_) return;
+  SUBMITTING_ = true;
+  clearInterval(TIMER); clearInterval(OVERALL_TIMER);
+  examBody().innerHTML = `<div class="center" style="padding:60px 0"><div class="spinner"></div><p class="sub" style="margin-top:8px">${auto?'Time\'s up — submitting your answers...':'Submitting your assessment...'}</p></div>`;
+  for (const q of QUESTIONS){
+    const a = ANSWERS[q.questionId];
+    if (!a || a.skipped) continue;
+    const payload = { elapsedSeconds: a.elapsedSeconds };
+    const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
+    if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
+    else payload.answerText = a.answerText;
+    try{ await callApi('submitAnswer', SESSION_ID, PORTAL_TOKEN, q.questionId, payload); }catch(e){}
+  }
+  stopRecording_(); stopScreenRecording_();
+  try{
+    const res = await callApi('finishSession', SESSION_ID, PORTAL_TOKEN);
+    renderDone_(res);
+  }catch(e){
+    renderDone_(null);
+  }
+}
+
+function renderDone_(res){
+  showLoginShell_();
+  const hasScore = res && res.percentage != null;
+  app().innerHTML = `
+    <div class="center">
+      <div style="font-size:40px">✅</div>
+      <h2>Assessment submitted</h2>
+      <p class="sub">Thank you for completing the assessment. HR will be in touch with next steps.</p>
+      ${hasScore?`<div class="score">${res.percentage}%</div><p class="sub">Your score (some answers may still need manual review)</p>`:''}
+    </div>`;
+}
+
+function renderFatalError_(message){
+  showLoginShell_();
+  app().innerHTML = `<div class="center"><div class="err-icon">!</div><h2>${esc(message)}</h2><p class="sub">If you believe this is a mistake, please contact the HR team who sent you this invitation.</p></div>`;
+}
+
+(function init(){
+  if (!SESSION_ID){ renderFatalError_('This interview link is invalid or incomplete.'); return; }
+  if (isMobileDevice_()){ showLoginShell_(); renderMobileBlock_(); return; }
+  if (API_URL.indexOf('REPLACE_WITH') !== -1){ renderFatalError_('This portal is not fully configured yet. Please contact HR.'); return; }
+  renderLogin();
+})();
+</script>
+</body>
+</html>
