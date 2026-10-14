@@ -641,16 +641,19 @@ function renderReview_(){
 // Sends every locally-held answer to the backend, then finalizes the
 // session. Called either by the candidate's own Final Submit click, or
 // automatically ~20s before the overall deadline so nothing is lost.
-function finalSubmitAll_(auto){
+async function finalSubmitAll_(auto){
   if (SUBMITTING_) return;
   SUBMITTING_ = true;
   clearInterval(TIMER); clearInterval(OVERALL_TIMER);
-  // The candidate doesn't need to sit and watch 25 requests round-trip to
-  // the backend - let them go immediately, and finish sending everything
-  // to the server in the background on this same page (the fetches keep
-  // running even after we've moved the UI on, as long as the tab stays open).
-  renderDone_(null);
-  const submitAll = Promise.all(QUESTIONS.map(q=>{
+  // Answers go out in parallel (fast - a few seconds for 20-25 questions
+  // instead of the old one-at-a-time loop), but we still WAIT for every one
+  // of them plus finishSession to actually land before telling the
+  // candidate they're done. Rendering "submitted" before the network calls
+  // finish is a trap: candidates close the tab the moment they see it,
+  // killing the in-flight requests, and the session is stuck "In Progress"
+  // forever because some answers never reached the server.
+  examBody().innerHTML = `<div class="center" style="padding:60px 0"><div class="spinner"></div><p class="sub" style="margin-top:8px">${auto?'Time\'s up — submitting your answers...':'Submitting your assessment...'}</p></div>`;
+  await Promise.all(QUESTIONS.map(q=>{
     const a = ANSWERS[q.questionId];
     if (!a || a.skipped) return Promise.resolve();
     const payload = { elapsedSeconds: a.elapsedSeconds };
@@ -659,10 +662,13 @@ function finalSubmitAll_(auto){
     else payload.answerText = a.answerText;
     return callApi('submitAnswer', SESSION_ID, PORTAL_TOKEN, q.questionId, payload).catch(()=>{});
   }));
-  submitAll
-    .then(()=>{ stopRecording_(); stopScreenRecording_(); return callApi('finishSession', SESSION_ID, PORTAL_TOKEN); })
-    .then(res=>{ if (res && res.percentage != null) updateDoneScore_(res.percentage); })
-    .catch(()=>{});
+  stopRecording_(); stopScreenRecording_();
+  try{
+    const res = await callApi('finishSession', SESSION_ID, PORTAL_TOKEN);
+    renderDone_(res);
+  }catch(e){
+    renderDone_(null);
+  }
 }
 
 function renderDone_(res){
@@ -676,10 +682,6 @@ function renderDone_(res){
       <div id="doneScoreBox">${hasScore?`<div class="score">${res.percentage}%</div><p class="sub">Your score (some answers may still need manual review)</p>`:''}</div>
       <p class="sub" style="margin-top:18px;font-size:12px">Facing a login or technical issue? Contact HR support at <b>${SUPPORT_EMAIL_}</b>.</p>
     </div>`;
-}
-function updateDoneScore_(percentage){
-  const box = document.getElementById('doneScoreBox');
-  if (box) box.innerHTML = `<div class="score">${percentage}%</div><p class="sub">Your score (some answers may still need manual review)</p>`;
 }
 
 function renderFatalError_(message){
