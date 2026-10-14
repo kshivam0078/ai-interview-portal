@@ -356,52 +356,80 @@ async function requestCameraAndStart_(){
   loadQuestions();
 }
 
+// MediaRecorder's own `start(timeslice)` only writes a playable WebM header
+// into the FIRST chunk it emits - every chunk after that is a headerless
+// continuation fragment, which plays back as "unsupported format" when
+// opened on its own (exactly what each "Part N" link was doing). The fix is
+// to never let one recorder instance span multiple uploaded files: start a
+// brand-new MediaRecorder for every ~60s segment and only upload once that
+// instance's own onstop event fires, so every uploaded file has its own
+// complete, independently playable header.
+function uploadRecordingBlob_(blob, kind, idx){
+  if (!blob || !blob.size) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const base64 = String(reader.result).split(',')[1];
+    callApi('uploadRecordingChunk', SESSION_ID, PORTAL_TOKEN, base64, idx, kind).catch(()=>{});
+  };
+  reader.readAsDataURL(blob);
+}
+
+let CAM_SEGMENT_ACTIVE_ = false, CAM_SEGMENT_TIMER_ = null;
+function startRecording_(){
+  try{
+    document.getElementById('recDot').hidden = false;
+    CAM_SEGMENT_ACTIVE_ = true;
+    recordCameraSegment_();
+  }catch(e){}
+}
+function recordCameraSegment_(){
+  if (!CAM_SEGMENT_ACTIVE_ || !CAM_STREAM) return;
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
+  const chunks = [];
+  const rec = new MediaRecorder(CAM_STREAM, { mimeType, videoBitsPerSecond: 250000 });
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    uploadRecordingBlob_(new Blob(chunks, { type: 'video/webm' }), 'camera', REC_CHUNK_INDEX_++);
+    if (CAM_SEGMENT_ACTIVE_) recordCameraSegment_();
+  };
+  RECORDER = rec;
+  rec.start();
+  CAM_SEGMENT_TIMER_ = setTimeout(()=>{ try{ if (rec.state !== 'inactive') rec.stop(); }catch(e){} }, 60000);
+}
+function stopRecording_(){
+  CAM_SEGMENT_ACTIVE_ = false;
+  clearTimeout(CAM_SEGMENT_TIMER_);
+  try{ if (RECORDER && RECORDER.state !== 'inactive') RECORDER.stop(); }catch(e){}
+  document.getElementById('recDot').hidden = true;
+}
+
+let SCREEN_SEGMENT_ACTIVE_ = false, SCREEN_SEGMENT_TIMER_ = null;
 function startScreenRecording_(){
   try{
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : 'video/webm';
-    SCREEN_RECORDER = new MediaRecorder(SCREEN_STREAM, { mimeType, videoBitsPerSecond: 200000 });
-    SCREEN_RECORDER.ondataavailable = e=>{
-      if (!e.data || !e.data.size) return;
-      const reader = new FileReader();
-      reader.onload = ()=>{
-        const base64 = String(reader.result).split(',')[1];
-        const idx = SCREEN_CHUNK_INDEX_++;
-        callApi('uploadRecordingChunk', SESSION_ID, PORTAL_TOKEN, base64, idx, 'screen').catch(()=>{});
-      };
-      reader.readAsDataURL(e.data);
-    };
-    SCREEN_RECORDER.start(60000);
+    SCREEN_SEGMENT_ACTIVE_ = true;
+    recordScreenSegment_();
     SCREEN_STREAM.getVideoTracks()[0]?.addEventListener('ended', ()=>terminateForViolation_('screen_share_stopped', 'You stopped screen sharing.'));
   }catch(e){}
 }
+function recordScreenSegment_(){
+  if (!SCREEN_SEGMENT_ACTIVE_ || !SCREEN_STREAM) return;
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : 'video/webm';
+  const chunks = [];
+  const rec = new MediaRecorder(SCREEN_STREAM, { mimeType, videoBitsPerSecond: 200000 });
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    uploadRecordingBlob_(new Blob(chunks, { type: 'video/webm' }), 'screen', SCREEN_CHUNK_INDEX_++);
+    if (SCREEN_SEGMENT_ACTIVE_) recordScreenSegment_();
+  };
+  SCREEN_RECORDER = rec;
+  rec.start();
+  SCREEN_SEGMENT_TIMER_ = setTimeout(()=>{ try{ if (rec.state !== 'inactive') rec.stop(); }catch(e){} }, 60000);
+}
 function stopScreenRecording_(){
-  try{ if (SCREEN_RECORDER && SCREEN_RECORDER.state !== 'inactive') SCREEN_RECORDER.requestData(); }catch(e){}
+  SCREEN_SEGMENT_ACTIVE_ = false;
+  clearTimeout(SCREEN_SEGMENT_TIMER_);
   try{ if (SCREEN_RECORDER && SCREEN_RECORDER.state !== 'inactive') SCREEN_RECORDER.stop(); }catch(e){}
   try{ if (SCREEN_STREAM) SCREEN_STREAM.getTracks().forEach(t=>t.stop()); }catch(e){}
-}
-
-function startRecording_(){
-  try{
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
-    RECORDER = new MediaRecorder(CAM_STREAM, { mimeType, videoBitsPerSecond: 250000 });
-    RECORDER.ondataavailable = e=>{
-      if (!e.data || !e.data.size) return;
-      const reader = new FileReader();
-      reader.onload = ()=>{
-        const base64 = String(reader.result).split(',')[1];
-        const idx = REC_CHUNK_INDEX_++;
-        callApi('uploadRecordingChunk', SESSION_ID, PORTAL_TOKEN, base64, idx, 'camera').catch(()=>{});
-      };
-      reader.readAsDataURL(e.data);
-    };
-    RECORDER.start(60000);
-    document.getElementById('recDot').hidden = false;
-  }catch(e){}
-}
-function stopRecording_(){
-  try{ if (RECORDER && RECORDER.state !== 'inactive') RECORDER.requestData(); }catch(e){}
-  try{ if (RECORDER && RECORDER.state !== 'inactive') RECORDER.stop(); }catch(e){}
-  document.getElementById('recDot').hidden = true;
 }
 
 function logActivity_(eventType, detail){
