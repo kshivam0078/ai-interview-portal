@@ -569,6 +569,10 @@ function saveCurrentAnswerLocally_(skipped){
   if (q.type === 'MCQ'){
     const checked = document.querySelector('input[name=opt]:checked');
     if (checked) ANSWERS[q.questionId] = { selectedOption: checked.value, elapsedSeconds, skipped: false };
+  } else if (q.type === 'MCQSubjective'){
+    const checked = document.querySelector('input[name=opt]:checked');
+    const txt = document.getElementById('txtAnswer');
+    if (checked) ANSWERS[q.questionId] = { selectedOption: checked.value, answerText: (txt && txt.value.trim()) || '', elapsedSeconds, skipped: false };
   } else {
     const txt = document.getElementById('txtAnswer');
     if (txt && txt.value.trim()) ANSWERS[q.questionId] = { answerText: txt.value.trim(), elapsedSeconds, skipped: false };
@@ -588,9 +592,12 @@ function renderQuestion(){
   const existing = ANSWERS[q.questionId];
   const pct = Math.round(((Q_INDEX+1) / QUESTIONS.length) * 100);
   let bodyHtml = '';
-  if (q.type === 'MCQ'){
+  if (q.type === 'MCQ' || q.type === 'MCQSubjective'){
     const opts = [['A',q.optionA],['B',q.optionB],['C',q.optionC],['D',q.optionD],['E',q.optionE]].filter(o=>o[1]);
     bodyHtml = opts.map(o=>`<label class="opt${existing && existing.selectedOption===o[0]?' sel':''}" data-val="${o[0]}"><input type="radio" name="opt" value="${o[0]}" ${existing && existing.selectedOption===o[0]?'checked':''}> <span>${esc(o[1])}</span></label>`).join('');
+    if (q.type === 'MCQSubjective'){
+      bodyHtml += `<textarea id="txtAnswer" style="margin-top:14px" placeholder="Briefly explain your choice...">${esc(existing && existing.answerText || '')}</textarea>`;
+    }
   } else if (q.type === 'FillBlank'){
     bodyHtml = `<input type="text" id="txtAnswer" class="fill-blank-input" placeholder="Type your answer here..." value="${esc(existing && existing.answerText || '')}" autocomplete="off">`;
   } else {
@@ -648,7 +655,9 @@ function renderReview_(){
     const flagged = !!FLAGS[q.questionId];
     let answerLabel = '<i style="color:#f87171">Not answered</i>';
     if (a && !a.skipped){
-      answerLabel = q.type === 'MCQ' ? `Option <b>${esc(a.selectedOption)}</b>` : `<b>${esc((a.answerText||'').slice(0,120))}${(a.answerText||'').length>120?'…':''}</b>`;
+      answerLabel = q.type === 'MCQ' ? `Option <b>${esc(a.selectedOption)}</b>`
+        : q.type === 'MCQSubjective' ? `Option <b>${esc(a.selectedOption)}</b> — <b>${esc((a.answerText||'').slice(0,90))}${(a.answerText||'').length>90?'…':''}</b>`
+        : `<b>${esc((a.answerText||'').slice(0,120))}${(a.answerText||'').length>120?'…':''}</b>`;
     }
     return `<div class="review-item">
       <div class="rq">
@@ -692,6 +701,7 @@ async function finalSubmitAll_(auto){
     const payload = { elapsedSeconds: a.elapsedSeconds };
     const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
     if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
+    else if (q.type === 'MCQSubjective'){ payload.selectedOption = a.selectedOption; payload.answerText = a.answerText; }
     else payload.answerText = a.answerText;
     return callApiRetry_('submitAnswer', [SESSION_ID, PORTAL_TOKEN, q.questionId, payload]).catch(()=>{});
   }));
