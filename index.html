@@ -9,7 +9,9 @@
   :root{--orange:#f97316;--orange-dark:#c2410c;--bg:#0e0e11;--card:#1c1612;--text:#e5e7eb;--muted:#9ca3af}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#151210,#0e0e11);color:var(--text);min-height:100vh}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#151210,#0e0e11);color:var(--text);min-height:100vh;position:relative}
+  body::before{content:'';position:fixed;inset:0;background:url('https://ranneeti.mentorsedu.com/img/ME-Circle_Orange.png') center center no-repeat;background-size:min(70vw,560px);opacity:.045;pointer-events:none;z-index:0}
+  .center-wrap{position:relative;z-index:1}
   .center-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
   .wrap{width:100%;max-width:520px}
   .brand{text-align:center;margin-bottom:18px}
@@ -306,10 +308,20 @@ function renderLogin(err){
   document.getElementById('liBtn').onclick = doLogin;
 }
 
+let LOGIN_IN_FLIGHT_ = false;
 async function doLogin(){
+  // Each login call generates a brand-new portal token server-side and
+  // overwrites the stored one - a double-click (or a slow first attempt
+  // tempting an impatient second click) fires two logins whose responses
+  // can resolve out of order, leaving the client holding a DIFFERENT
+  // token than the one the server actually kept. Every later action then
+  // fails with "Session expired" even though nothing is really wrong.
+  // Blocking re-entry here removes that race outright.
+  if (LOGIN_IN_FLIGHT_) return;
+  LOGIN_IN_FLIGHT_ = true;
   const email = document.getElementById('liEmail').value.trim();
   const code = document.getElementById('liCode').value.trim();
-  if (!email || !code){ renderLogin('Please enter both your email and access code.'); return; }
+  if (!email || !code){ LOGIN_IN_FLIGHT_ = false; renderLogin('Please enter both your email and access code.'); return; }
   app().innerHTML = '<div class="center"><div class="spinner"></div><p class="sub" style="margin-top:8px">Verifying...</p></div>';
   DEVICE_FINGERPRINT_ = computeDeviceFingerprint_();
   LOGIN_LOCATION_ = await fetchRoughLocation_();
@@ -324,14 +336,17 @@ async function doLogin(){
     }
     renderIntro(res.candidateName, res.jobTitle);
   }catch(e){ renderLogin(e.message || String(e)); }
+  finally{ LOGIN_IN_FLIGHT_ = false; }
 }
 
 function renderIntro(name, jobTitle){
+  const displayName = (name || '').trim() || 'there';
+  const hasJob = !!(jobTitle || '').trim();
   document.getElementById('sbCandidateName').textContent = name || 'Candidate';
   document.getElementById('sbJobTitle').textContent = jobTitle || '';
   app().innerHTML = `
-    <h2>Hi ${esc(name)}</h2>
-    <p class="sub">You're about to start the online assessment for <b>${esc(jobTitle)}</b>.</p>
+    <h2>Hi ${esc(displayName)}, 👋</h2>
+    <p class="sub">${hasJob ? `Thank you for applying for <b>${esc(jobTitle)}</b> at Mentors Eduserv. You're about to begin your online assessment.` : `You're about to begin your online assessment at Mentors Eduserv.`}</p>
     <div class="hint">
       &bull; <b>Total time for this assessment: ${TOTAL_DURATION_MIN_ || '—'} minutes</b>, already counting down since you logged in. The remaining time stays visible at the top of the screen throughout.<br>
       &bull; <b>Camera, microphone and screen sharing are all mandatory</b> for this assessment and are recorded for review - you won't be able to start without granting all three.<br>
@@ -341,6 +356,7 @@ function renderIntro(name, jobTitle){
       &bull; Copying question text and pasting into answers is disabled.<br>
       &bull; Complete it in one sitting - you won't be able to resume once you close this page, unless HR resets your session.
     </div>
+    <p class="sub" style="margin-top:16px;text-align:center;color:var(--orange)">Take your time, stay focused, and best of luck! 🌟</p>
     <button class="btn" id="startBtn">Continue to Assessment</button>
     <div id="camErr"></div>
   `;
@@ -551,6 +567,16 @@ async function loadQuestions(){
     renderSidebar_();
     renderQuestion();
   }catch(e){
+    if (/session expired/i.test(String(e && e.message || ''))){
+      examBody().innerHTML = `<div class="center" style="padding:60px 0">
+        <div class="err-icon">!</div>
+        <h2>Session needs a refresh</h2>
+        <p class="sub">Please log in again with the same access code - this won't restart your assessment.</p>
+        <button class="btn" id="relogRetryBtn" style="max-width:260px;margin:16px auto 0">Log in again</button>
+      </div>`;
+      document.getElementById('relogRetryBtn').onclick = ()=>{ PORTAL_TOKEN = ''; sessionStorage.removeItem('aiInterviewToken_' + SESSION_ID); renderLogin(); };
+      return;
+    }
     examBody().innerHTML = `<div class="err">${esc(e.message||String(e))}</div>`;
   }
 }
@@ -747,19 +773,26 @@ async function finalSubmitAll_(auto){
     // point (submitAnswer succeeded above), only the final "mark complete"
     // step needs to land.
     SUBMITTING_ = false;
-    renderSubmitError_();
+    renderSubmitError_(e && e.message);
   }
 }
 
-function renderSubmitError_(){
+function renderSubmitError_(message){
+  // A token mismatch ("Session expired") can't be fixed by Retry - it'll
+  // just fail the exact same way again, since the client is still holding
+  // the same wrong token. Offer a real way out: log back in with the same
+  // access code, which issues a fresh, correctly-synced token.
+  const isSessionIssue = /session expired/i.test(String(message || ''));
   examBody().innerHTML = `<div class="center" style="padding:60px 0">
     <div class="err-icon">!</div>
     <h2>Couldn't finalize your submission</h2>
-    <p class="sub">Your answers were saved, but we couldn't confirm the final submission because of a connection issue. Please don't close this tab - tap Retry below.</p>
-    <button class="btn" id="retrySubmitBtn" style="max-width:260px;margin:16px auto 0">Retry</button>
+    <p class="sub">${isSessionIssue
+      ? `Your session needs to be refreshed before we can confirm your submission. Please log in again with the same access code - your progress is kept.`
+      : `Your answers were saved, but we couldn't confirm the final submission because of a connection issue. Please don't close this tab - tap Retry below.`}</p>
+    <button class="btn" id="retrySubmitBtn" style="max-width:260px;margin:16px auto 0">${isSessionIssue ? 'Log in again' : 'Retry'}</button>
     <p class="sub" style="margin-top:14px;font-size:12px">Still stuck? Contact HR support at <b>${SUPPORT_EMAIL_}</b>.</p>
   </div>`;
-  document.getElementById('retrySubmitBtn').onclick = ()=>finalSubmitAll_(false);
+  document.getElementById('retrySubmitBtn').onclick = isSessionIssue ? ()=>{ SUBMITTING_ = false; PORTAL_TOKEN = ''; sessionStorage.removeItem('aiInterviewToken_' + SESSION_ID); renderLogin(); } : ()=>finalSubmitAll_(false);
 }
 
 // Wraps a callApi call with a few retries (network blips, not persistent
