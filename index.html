@@ -567,7 +567,13 @@ async function loadQuestions(){
     renderSidebar_();
     renderQuestion();
   }catch(e){
-    if (/session expired/i.test(String(e && e.message || ''))){
+    const msg = String(e && e.message || '');
+    // The backend already force-completed this session (deadline passed,
+    // or a prior attempt already finished it) - that's a DONE state, not
+    // something to retry. Showing it as a dead-end error would send the
+    // candidate in circles.
+    if (/time limit.*was reached|already been submitted/i.test(msg)){ renderDone_(null); return; }
+    if (/session expired/i.test(msg)){
       examBody().innerHTML = `<div class="center" style="padding:60px 0">
         <div class="err-icon">!</div>
         <h2>Session needs a refresh</h2>
@@ -766,6 +772,18 @@ async function finalSubmitAll_(auto){
     const res = await callApiRetry_('finishSession', [SESSION_ID, PORTAL_TOKEN]);
     renderDone_(res);
   }catch(e){
+    // These two messages are the backend reporting the submission as a
+    // DONE DEAL, not a failure - "time limit reached" fires after it has
+    // already force-completed the session server-side, and "already
+    // submitted" means a prior attempt (e.g. an earlier retry) already
+    // succeeded. Both were being shown as the scary "couldn't finalize"
+    // error even though nothing needed retrying - the candidate's
+    // submission had, in fact, gone through.
+    const msg = String(e && e.message || '');
+    if (/time limit.*was reached|already been submitted/i.test(msg)){
+      renderDone_(null);
+      return;
+    }
     // Do NOT tell the candidate this is done when it isn't - that's exactly
     // what caused sessions to sit silently stuck "In Progress" with the
     // candidate believing everything had gone through. Give them a visible
