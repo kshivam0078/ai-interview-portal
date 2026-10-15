@@ -201,15 +201,45 @@ let SUBMITTING_ = false;
 // application/x-www-form-urlencoded, or multipart/form-data) needs no
 // CORS preflight, which Apps Script's doPost has no way to answer.
 // application/json would trigger a preflight OPTIONS request and fail.
+// Google occasionally serves an HTML page instead of doPost's JSON for a
+// single request - a transient redirect/quota hiccup, not a real failure
+// (confirmed: the next identical request normally succeeds). Retrying
+// once or twice silently fixes almost all of these; only a final,
+// still-failing attempt surfaces a real (human-readable, not a raw JSON
+// parse error) message.
 async function callApi(action, ...args){
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, args })
-  });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error || 'Request failed.');
-  return json.result;
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++){
+    let text;
+    try{
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, args })
+      });
+      text = await res.text();
+    }catch(networkErr){
+      // Genuine network failure - worth retrying.
+      lastErr = networkErr;
+      if (attempt < 2) { await new Promise(r=>setTimeout(r, 700 * (attempt + 1))); continue; }
+      throw lastErr;
+    }
+    let json;
+    try{ json = JSON.parse(text); }
+    catch(parseErr){
+      // Transient Google redirect/quota hiccup returning an HTML page
+      // instead of doPost's JSON - retry, it normally resolves itself.
+      lastErr = new Error('The server sent back an unexpected response - please try again in a moment.');
+      if (attempt < 2) { await new Promise(r=>setTimeout(r, 700 * (attempt + 1))); continue; }
+      throw lastErr;
+    }
+    // A real application error (wrong code, expired session, etc.) is not
+    // transient - surface it immediately, no point retrying the same
+    // rejection three times with delays in between.
+    if (!json.ok) throw new Error(json.error || 'Request failed.');
+    return json.result;
+  }
+  throw lastErr;
 }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
