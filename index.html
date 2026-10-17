@@ -182,6 +182,7 @@ let LOGIN_TIME_ = null; // Date — used only to show "Total: Xm" alongside the 
 let TOTAL_DURATION_MIN_ = null;
 let QUESTIONS = [];
 let ANSWERS = {};   // questionId -> {selectedOption|answerText, elapsedSeconds, skipped:bool}
+let SUBMITTED_ = {}; // questionId -> true once the answer has been saved on the server (then it's LOCKED - can't be changed)
 let FLAGS = {};     // questionId -> true
 let Q_INDEX = 0;
 let TIMER = null;
@@ -564,7 +565,14 @@ async function loadQuestions(){
     const res = await callApi('getQuestions', SESSION_ID, PORTAL_TOKEN);
     if (!res.questions || !res.questions.length){ renderFatalError_('No questions are available for this assessment yet.'); return; }
     QUESTIONS = res.questions;
-    Q_INDEX = 0;
+    // Resuming: any question already answered on the server is LOCKED. We mark
+    // it submitted (and a placeholder answer so the sidebar shows it answered)
+    // — the candidate can't redo it, matching "once answered, can't change".
+    QUESTIONS.forEach(q=>{ if (q.answered){ SUBMITTED_[q.questionId] = true; if (!ANSWERS[q.questionId]) ANSWERS[q.questionId] = { skipped:false, locked:true, elapsedSeconds:null }; } });
+    // Start on the first not-yet-answered question so a resumed candidate
+    // isn't dropped back onto a locked one.
+    const firstOpen = QUESTIONS.findIndex(q=>!SUBMITTED_[q.questionId]);
+    Q_INDEX = firstOpen >= 0 ? firstOpen : 0;
     renderSidebar_();
     renderQuestion();
   }catch(e){
@@ -615,11 +623,39 @@ function renderSidebar_(){
 }
 
 function jumpToQuestion_(i){
+  const leaving = QUESTIONS[Q_INDEX];
   saveCurrentAnswerLocally_(false);
+  submitAnswerInBackground_(leaving);
   Q_INDEX = i;
   renderQuestion();
 }
 
+// Sends ONE question's answer to the server, with retry. Marks it SUBMITTED_
+// (locked) on success. Returns true if saved (or already saved), false on
+// failure. Submitting answers one-by-one AS the candidate moves through the
+// test — instead of firing all 20+ in parallel at the very end — is what
+// fixes answers silently getting dropped (Apps Script can't handle a big
+// burst of simultaneous calls, so only a handful used to actually save,
+// which is why only ~6 showed as attempted and the % was computed off those).
+async function submitOneAnswer_(q){
+  const a = ANSWERS[q.questionId];
+  if (!a || a.skipped) return true;          // nothing to submit
+  if (SUBMITTED_[q.questionId]) return true;  // already saved + locked
+  const payload = { elapsedSeconds: a.elapsedSeconds };
+  const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
+  if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
+  else if (q.type === 'MCQSubjective'){ payload.selectedOption = a.selectedOption; payload.answerText = a.answerText; }
+  else payload.answerText = a.answerText;
+  try {
+    await callApiRetry_('submitAnswer', [SESSION_ID, PORTAL_TOKEN, q.questionId, payload]);
+    SUBMITTED_[q.questionId] = true;   // locked from now on
+    renderSidebar_();
+    return true;
+  } catch(e){ return false; }
+}
+// Fire-and-forget save of the question just left behind, so it's on the
+// server well before final submit (and gets locked).
+function submitAnswerInBackground_(q){ if (q) submitOneAnswer_(q).catch(()=>{}); }
 function saveCurrentAnswerLocally_(skipped){
   const q = QUESTIONS[Q_INDEX];
   if (!q) return;
@@ -653,41 +689,44 @@ function toggleFlag_(){
 function renderQuestion(){
   const q = QUESTIONS[Q_INDEX];
   const existing = ANSWERS[q.questionId];
+  const locked = !!SUBMITTED_[q.questionId]; // answer already given + saved — can't be changed
   const pct = Math.round(((Q_INDEX+1) / QUESTIONS.length) * 100);
+  const dis = locked ? 'disabled' : '';
   let bodyHtml = '';
   if (q.type === 'MCQ' || q.type === 'MCQSubjective'){
     const opts = [['A',q.optionA],['B',q.optionB],['C',q.optionC],['D',q.optionD],['E',q.optionE]].filter(o=>o[1]);
-    bodyHtml = opts.map(o=>`<label class="opt${existing && existing.selectedOption===o[0]?' sel':''}" data-val="${o[0]}"><input type="radio" name="opt" value="${o[0]}" ${existing && existing.selectedOption===o[0]?'checked':''}> <span>${esc(o[1])}</span></label>`).join('');
+    bodyHtml = opts.map(o=>`<label class="opt${existing && existing.selectedOption===o[0]?' sel':''}" data-val="${o[0]}"><input type="radio" name="opt" value="${o[0]}" ${existing && existing.selectedOption===o[0]?'checked':''} ${dis}> <span>${esc(o[1])}</span></label>`).join('');
     if (q.type === 'MCQSubjective'){
-      bodyHtml += `<textarea id="txtAnswer" style="margin-top:14px" placeholder="Briefly explain your choice...">${esc(existing && existing.answerText || '')}</textarea>`;
+      bodyHtml += `<textarea id="txtAnswer" style="margin-top:14px" placeholder="Briefly explain your choice..." ${dis}>${esc(existing && existing.answerText || '')}</textarea>`;
     }
   } else if (q.type === 'FillBlank'){
-    bodyHtml = `<input type="text" id="txtAnswer" class="fill-blank-input" placeholder="Type your answer here..." value="${esc(existing && existing.answerText || '')}" autocomplete="off">`;
+    bodyHtml = `<input type="text" id="txtAnswer" class="fill-blank-input" placeholder="Type your answer here..." value="${esc(existing && existing.answerText || '')}" autocomplete="off" ${dis}>`;
   } else {
-    bodyHtml = `<textarea id="txtAnswer" placeholder="Type your answer here...">${esc(existing && existing.answerText || '')}</textarea>`;
+    bodyHtml = `<textarea id="txtAnswer" placeholder="Type your answer here..." ${dis}>${esc(existing && existing.answerText || '')}</textarea>`;
   }
   const isLast = Q_INDEX === QUESTIONS.length - 1;
   const flagged = !!FLAGS[q.questionId];
   examBody().innerHTML = `
     <div class="progress"><i style="width:${pct}%"></i></div>
-    <div class="qhead"><span class="qnum">Question ${Q_INDEX+1} of ${QUESTIONS.length}</span><span class="timer" id="timerEl">${q.timeLimitSeconds}s</span></div>
+    <div class="qhead"><span class="qnum">Question ${Q_INDEX+1} of ${QUESTIONS.length}</span><span class="timer" id="timerEl">${locked?'✓ answered':q.timeLimitSeconds+'s'}</span></div>
     <h2>${esc(q.questionText)}</h2>
+    ${locked?'<div class="hint" style="border:1px solid #16a34a;background:rgba(22,163,74,.07)">✓ Your answer has been submitted and locked — it can\'t be changed.</div>':''}
     <div id="qBody">${bodyHtml}</div>
     <div class="exam-actions">
-      <button class="btn skip-btn" id="skipBtn">Skip for now</button>
+      ${locked?'':'<button class="btn skip-btn" id="skipBtn">Skip for now</button>'}
       <button class="btn flag-btn${flagged?' flagged':''}" id="flagBtn">${flagged?'🚩 Flagged':'Flag for review'}</button>
       <button class="btn" id="nextBtn">${isLast?'Review & Submit':'Next Question'}</button>
     </div>
   `;
-  if (q.type === 'MCQ'){
+  if (q.type === 'MCQ' && !locked){
     document.querySelectorAll('.opt').forEach(o=>o.addEventListener('click', ()=>{
       document.querySelectorAll('.opt').forEach(x=>x.classList.remove('sel'));
       o.classList.add('sel'); o.querySelector('input').checked = true;
     }));
   }
-  document.getElementById('skipBtn').onclick = ()=>{ clearInterval(TIMER); saveCurrentAnswerLocally_(true); goNext_(); };
+  if (!locked) document.getElementById('skipBtn').onclick = ()=>{ clearInterval(TIMER); saveCurrentAnswerLocally_(true); goNext_(); };
   document.getElementById('flagBtn').onclick = toggleFlag_;
-  document.getElementById('nextBtn').onclick = ()=>{ clearInterval(TIMER); saveCurrentAnswerLocally_(false); isLast ? renderReview_() : goNext_(); };
+  document.getElementById('nextBtn').onclick = ()=>{ clearInterval(TIMER); if(!locked){ saveCurrentAnswerLocally_(false); submitAnswerInBackground_(q); } isLast ? renderReview_() : goNext_(); };
   renderSidebar_();
 
   Q_START_TIME_ = Date.now();
@@ -699,8 +738,11 @@ function renderQuestion(){
     if (t){ t.textContent = timeLeft+'s'; if (timeLeft<=10) t.classList.add('low'); }
     if (timeLeft<=0){
       clearInterval(TIMER);
-      saveCurrentAnswerLocally_(false);
-      if (!ANSWERS[q.questionId]) saveCurrentAnswerLocally_(true); // nothing was selected in time - counts as skipped
+      if (!SUBMITTED_[q.questionId]){
+        saveCurrentAnswerLocally_(false);
+        if (!ANSWERS[q.questionId]) saveCurrentAnswerLocally_(true); // nothing was selected in time - counts as skipped
+        submitAnswerInBackground_(q);
+      }
       isLast ? renderReview_() : goNext_();
     }
   },1000);
@@ -722,12 +764,14 @@ function renderReview_(){
         : q.type === 'MCQSubjective' ? `Option <b>${esc(a.selectedOption)}</b> — <b>${esc((a.answerText||'').slice(0,90))}${(a.answerText||'').length>90?'…':''}</b>`
         : `<b>${esc((a.answerText||'').slice(0,120))}${(a.answerText||'').length>120?'…':''}</b>`;
     }
+    const lockedItem = !!SUBMITTED_[q.questionId];
+    const notAnswered = !a || a.skipped;
     return `<div class="review-item">
       <div class="rq">
         <b>${i+1}. ${esc(q.questionText.slice(0,90))}${q.questionText.length>90?'…':''}</b>
-        <button class="review-edit" onclick="jumpToQuestion_(${i})">Edit</button>
+        <button class="review-edit" onclick="jumpToQuestion_(${i})">${lockedItem?'View':(notAnswered?'Answer':'Open')}</button>
       </div>
-      <div class="ra">${flagged?'🚩 Flagged &middot; ':''}${answerLabel}</div>
+      <div class="ra">${lockedItem?'🔒 ':''}${flagged?'🚩 Flagged &middot; ':''}${lockedItem?'<b>Submitted &amp; locked</b>':answerLabel}</div>
     </div>`;
   }).join('');
   const unanswered = QUESTIONS.filter(q=>!ANSWERS[q.questionId] || ANSWERS[q.questionId].skipped).length;
@@ -758,16 +802,20 @@ async function finalSubmitAll_(auto){
   // killing the in-flight requests, and the session is stuck "In Progress"
   // forever because some answers never reached the server.
   examBody().innerHTML = `<div class="center" style="padding:60px 0"><div class="spinner"></div><p class="sub" style="margin-top:8px">${auto?'Time\'s up — submitting your answers...':'Submitting your assessment...'}</p></div>`;
-  await Promise.all(QUESTIONS.map(q=>{
-    const a = ANSWERS[q.questionId];
-    if (!a || a.skipped) return Promise.resolve();
-    const payload = { elapsedSeconds: a.elapsedSeconds };
-    const snap = captureSnapshot_(); if (snap) payload.snapshotsBase64 = [snap];
-    if (q.type === 'MCQ') payload.selectedOption = a.selectedOption;
-    else if (q.type === 'MCQSubjective'){ payload.selectedOption = a.selectedOption; payload.answerText = a.answerText; }
-    else payload.answerText = a.answerText;
-    return callApiRetry_('submitAnswer', [SESSION_ID, PORTAL_TOKEN, q.questionId, payload]).catch(()=>{});
-  }));
+  // Submit any answers not already saved during the test — SEQUENTIALLY, so we
+  // never fire a big burst of parallel calls that Apps Script silently drops
+  // (the old bug that lost most answers). Already-saved ones are skipped
+  // instantly. Two passes so a transient failure gets a second chance.
+  const pending = ()=>QUESTIONS.filter(q=>{ const a=ANSWERS[q.questionId]; return a && !a.skipped && !SUBMITTED_[q.questionId]; });
+  for (let pass=0; pass<2; pass++){
+    const list = pending();
+    if (!list.length) break;
+    const bar = document.querySelector('#app .sub');
+    for (let i=0;i<list.length;i++){
+      if (bar) bar.textContent = `Saving your answers… (${i+1}/${list.length})`;
+      await submitOneAnswer_(list[i]);
+    }
+  }
   stopRecording_(); stopScreenRecording_();
   try{
     const res = await callApiRetry_('finishSession', [SESSION_ID, PORTAL_TOKEN]);
