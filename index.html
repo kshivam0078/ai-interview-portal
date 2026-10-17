@@ -302,6 +302,7 @@ function renderLogin(err){
     <input type="text" id="liCode" placeholder="10-character code">
     ${err?`<div class="err">${esc(err)}</div>`:''}
     <button class="btn" id="liBtn">Continue</button>
+    <div class="hint" style="border:1px solid var(--orange);background:rgba(249,115,22,.06)">⚠️ Please use <b>Google Chrome</b> on a desktop/laptop. This assessment needs camera, microphone and screen-sharing access, which other browsers (such as Safari) may block or not prompt for correctly. Also sit alone in a quiet place — background voices/noise and switching away are flagged.</div>
     <div class="hint">This assessment requires camera and microphone access for the full session, used for identity verification and recorded for review purposes only - never shared beyond Mentors Eduserv HR.</div>
     <p class="sub" style="margin-top:14px;font-size:11px">Trouble logging in or any other issue? Email HR support at <b>${SUPPORT_EMAIL_}</b>.</p>
   `;
