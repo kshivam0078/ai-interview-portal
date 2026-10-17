@@ -154,6 +154,11 @@
 <video id="camPreview" autoplay muted playsinline hidden></video>
 <div class="rec-dot" id="recDot" hidden><i></i> Recording in progress</div>
 
+<!-- Proctoring warning bubble shown to the candidate (no face / low light / multiple faces / noise / looking away) -->
+<div id="proctorBubble" style="display:none;position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:9999;background:#7c2d12;color:#fff;border:1px solid #f97316;border-radius:12px;padding:10px 16px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center"></div>
+
+<!-- face-api.js for proctoring (face count / landmarks / eye-gaze). Loaded from a CDN; if it fails the exam still runs, just without camera-based face checks. -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 // ======================================================================
 // Mentors Eduserv — Online Interview Assessment (externally hosted)
@@ -400,6 +405,7 @@ async function requestCameraAndStart_(){
   }
   startIntegrityWatch_();
   startIntegrityChecks_();
+  startProctoring_();
   startOverallTimer_();
   loadQuestions();
 }
@@ -527,6 +533,170 @@ function startIntegrityWatch_(){
       t.addEventListener('ended', ()=>terminateForViolation_('camera_or_mic_lost', 'Your camera/microphone feed was lost.'));
     });
   }
+}
+
+/* ============================ PROCTORING ============================
+   Camera + mic based monitoring during the exam. All checks degrade safely:
+   if face-api or audio setup fails, the exam still runs. Two kinds of signal:
+   - SOFT (flag + a brief on-screen warning to the candidate): no face, low
+     light, looking away, an injected overlay/extension bubble.
+   - STRIKE (1st = flag + warning + rule reminder, 2nd = assessment auto-
+     submitted): more than one face in frame, and sustained talking/noise.
+==================================================================== */
+let PROCTOR_STARTED_=false, PROCTOR_MODELS_OK_=false;
+let FACE_TIMER_=null, AUDIO_TIMER_=null;
+let MULTI_FACE_STRIKES_=0, NOISE_STRIKES_=0;
+let LOOKAWAY_RUN_=0, NOFACE_RUN_=0;
+let LAST_BUBBLE_={};
+let AUDIO_CTX_=null, AUDIO_ANALYSER_=null, AUDIO_DATA_=null, NOISE_RUN_=0;
+
+function showProctorBubble_(key, msg, ms){
+  // Throttle each kind of warning so it doesn't spam the candidate.
+  const now=Date.now();
+  if (LAST_BUBBLE_[key] && now-LAST_BUBBLE_[key] < 8000) return;
+  LAST_BUBBLE_[key]=now;
+  const b=document.getElementById('proctorBubble');
+  if (!b) return;
+  b.textContent='⚠️ '+msg;
+  b.style.display='block';
+  clearTimeout(b._t);
+  b._t=setTimeout(()=>{ b.style.display='none'; }, ms||4000);
+}
+
+async function startProctoring_(){
+  if (PROCTOR_STARTED_) return;
+  PROCTOR_STARTED_=true;
+  // Load face-api models (tiny detector + landmarks for eye/head tracking).
+  try{
+    if (window.faceapi){
+      const MODELS='https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(MODELS);
+      PROCTOR_MODELS_OK_=true;
+    }
+  }catch(e){ PROCTOR_MODELS_OK_=false; }
+  startFaceWatch_();
+  startAudioWatch_();
+  startOverlayWatch_();
+}
+
+function proctorVideoEl_(){ return document.getElementById('camPreview'); }
+
+// Every ~4s: how many faces, is it too dark, is the candidate looking away.
+function startFaceWatch_(){
+  if (!PROCTOR_MODELS_OK_ || FACE_TIMER_) return;
+  FACE_TIMER_=setInterval(async ()=>{
+    if (SUBMITTING_ || TERMINATING_) return;
+    const v=proctorVideoEl_(); if (!v || !v.srcObject || v.videoWidth===0) return;
+    // Brightness (low-light) check on a downscaled frame.
+    try{
+      const c=document.createElement('canvas'); c.width=64; c.height=48;
+      const g=c.getContext('2d'); g.drawImage(v,0,0,64,48);
+      const d=g.getImageData(0,0,64,48).data; let sum=0;
+      for(let i=0;i<d.length;i+=4) sum+=(d[i]+d[i+1]+d[i+2])/3;
+      const avg=sum/(d.length/4);
+      if (avg<32){ showProctorBubble_('lowlight','Low light — please sit in a well-lit place so your face is visible.'); logActivity_('low_light','avg brightness '+Math.round(avg)); }
+    }catch(e){}
+    // Face count + head/eye direction.
+    try{
+      const dets=await faceapi.detectAllFaces(v,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+      const n=dets.length;
+      if (n===0){
+        NOFACE_RUN_++;
+        showProctorBubble_('noface','No face detected — please stay in front of the camera.');
+        if (NOFACE_RUN_>=2) logActivity_('no_face','no face for 2 consecutive checks');
+      } else {
+        NOFACE_RUN_=0;
+        if (n>1){
+          // STRIKE: more than one person in frame.
+          MULTI_FACE_STRIKES_++;
+          logActivity_('multiple_faces', n+' faces detected');
+          if (MULTI_FACE_STRIKES_>=2){
+            terminateForViolation_('multiple_faces','More than one person was detected on camera.');
+            return;
+          }
+          showProctorBubble_('multiface','More than one face detected! You must be ALONE. One more time and the assessment will be submitted automatically.', 7000);
+        } else {
+          // Single face — rough look-away estimate from landmarks (nose vs eye
+          // midpoint horizontal offset => head turned; and vertical for down).
+          try{
+            const lm=dets[0].landmarks.positions;
+            const leX=(lm[36].x+lm[39].x)/2, reX=(lm[42].x+lm[45].x)/2;
+            const eyeMidX=(leX+reX)/2, noseX=lm[30].x;
+            const eyeDist=Math.abs(reX-leX)||1;
+            const turn=Math.abs(noseX-eyeMidX)/eyeDist; // ~>0.5 = turned away
+            if (turn>0.55){ LOOKAWAY_RUN_++; } else { LOOKAWAY_RUN_=0; }
+            if (LOOKAWAY_RUN_>=2){ showProctorBubble_('look','Please look at the screen — looking away repeatedly is flagged.'); logActivity_('looking_away','head turned, run '+LOOKAWAY_RUN_); LOOKAWAY_RUN_=0; }
+          }catch(e){}
+        }
+      }
+    }catch(e){}
+  }, 4000);
+}
+
+// Mic level watch: sustained loud audio = talking / background noise.
+function startAudioWatch_(){
+  if (AUDIO_TIMER_ || !CAM_STREAM) return;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if (!AC) return;
+    AUDIO_CTX_=new AC();
+    const src=AUDIO_CTX_.createMediaStreamSource(CAM_STREAM);
+    AUDIO_ANALYSER_=AUDIO_CTX_.createAnalyser(); AUDIO_ANALYSER_.fftSize=512;
+    AUDIO_DATA_=new Uint8Array(AUDIO_ANALYSER_.frequencyBinCount);
+    src.connect(AUDIO_ANALYSER_);
+  }catch(e){ return; }
+  AUDIO_TIMER_=setInterval(()=>{
+    if (SUBMITTING_ || TERMINATING_) return;
+    try{
+      AUDIO_ANALYSER_.getByteFrequencyData(AUDIO_DATA_);
+      let sum=0; for(let i=0;i<AUDIO_DATA_.length;i++) sum+=AUDIO_DATA_[i];
+      const avg=sum/AUDIO_DATA_.length; // 0..255
+      // Human speech/noise pushes this well above a quiet room's hum.
+      if (avg>42) NOISE_RUN_++; else NOISE_RUN_=Math.max(0,NOISE_RUN_-1);
+      // ~6s of sustained noise (3 samples @2s) = one strike.
+      if (NOISE_RUN_>=3){
+        NOISE_RUN_=0;
+        NOISE_STRIKES_++;
+        logActivity_('noise_detected','sustained audio level ~'+Math.round(avg));
+        if (NOISE_STRIKES_>=2){ terminateForViolation_('noise_detected','Continued talking or background noise was detected.'); return; }
+        showProctorBubble_('noise','Noise/voices detected! Sit ALONE in a QUIET place — no talking. One more time and the assessment will be submitted automatically.', 7000);
+      }
+    }catch(e){}
+  }, 2000);
+}
+
+// Flags browser extensions / AI chat widgets / floating bubbles that inject
+// their own overlay into the page. Can't name the tool, but a fixed/absolute
+// element at the top of the DOM that isn't ours is exactly how they show up.
+function startOverlayWatch_(){
+  try{
+    const known=new Set(['proctorBubble','wrap','examShell','recDot','app','camPreview']);
+    const check=(nodes)=>{
+      nodes.forEach(el=>{
+        if (!el || el.nodeType!==1) return;
+        if (el.tagName==='SCRIPT'||el.tagName==='STYLE'||el.tagName==='LINK') return;
+        if (el.id && known.has(el.id)) return;
+        if (el.closest && el.closest('#examShell,#wrap,#app')) return; // our own UI
+        let cs; try{ cs=getComputedStyle(el); }catch(e){ return; }
+        const floating=(cs.position==='fixed'||cs.position==='absolute');
+        const z=parseInt(cs.zIndex||'0',10)||0;
+        if (floating && z>=1000){
+          logActivity_('overlay_injected', (el.tagName||'')+(el.id?'#'+el.id:'')+(el.className&&typeof el.className==='string'?'.'+el.className.split(' ')[0]:''));
+          showProctorBubble_('overlay','A browser extension / floating tool was detected on the page. Please close all extensions, plugins and AI tools — this is flagged.', 7000);
+        }
+      });
+    };
+    const obs=new MutationObserver(muts=>{ muts.forEach(m=>check([].slice.call(m.addedNodes))); });
+    obs.observe(document.documentElement,{childList:true,subtree:true});
+    // Also scan what's already on the page once.
+    setTimeout(()=>check([].slice.call(document.body.children)), 1500);
+  }catch(e){}
+}
+
+function stopProctoring_(){
+  if (FACE_TIMER_){ clearInterval(FACE_TIMER_); FACE_TIMER_=null; }
+  if (AUDIO_TIMER_){ clearInterval(AUDIO_TIMER_); AUDIO_TIMER_=null; }
+  try{ if (AUDIO_CTX_) AUDIO_CTX_.close(); }catch(e){}
 }
 
 // ---- Overall session countdown (client-side mirror of the server deadline) ----
@@ -816,7 +986,7 @@ async function finalSubmitAll_(auto){
       await submitOneAnswer_(list[i]);
     }
   }
-  stopRecording_(); stopScreenRecording_();
+  stopRecording_(); stopScreenRecording_(); stopProctoring_();
   try{
     const res = await callApiRetry_('finishSession', [SESSION_ID, PORTAL_TOKEN]);
     renderDone_(res);
